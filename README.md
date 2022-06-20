@@ -5,7 +5,7 @@ Helpers to get pool state.
 ### Assumptions & Constraints:
 
 - An upkeep **will** happen every `UpdateInterval`
-- May not work if `FrontRunningInterval` is not completely divisible by `updateInterval`
+- May not work if `FrontRunningInterval` is not completely divisible by `UpdateInterval`
 - Does not simulate keeper fees that get paid out of the pool
 - Does not simulate dynamic minting fees
 
@@ -23,7 +23,7 @@ Returns number of periods that will be executed during the `FrontRunningInterval
 `leveragedPool` - Leveraged Pool Address
 `periods` - Number of commit periods to simulate
 
-Returns the `ExpectedPoolState` after the commit periods are applied
+Returns the `ExpectedPoolState` after the TotalCommitments for `periods` are applied
 
 ```
     struct ExpectedPoolState {

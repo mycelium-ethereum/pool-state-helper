@@ -50,6 +50,7 @@ interface ISMAOracle is IOracleWrapper {
 interface IPoolStateHelper {
     error INVALID_PERIOD();
 
+    // todo should this include pending mints into this side?
     struct SideInfo {
         uint256 supply; // poolToken.totalSupply()
         uint256 settlementBalance; // balance of settlementTokens associated with supply
@@ -120,10 +121,11 @@ contract PoolStateHelper is IPoolStateHelper {
     uint128 public constant SHORT_INDEX = 1;
 
     /**
-     * @notice Get an array of TotalCommitment in ascending order for a given period.
+     * @notice Get an array of TotalCommitment in ascending order for a given number of periods.
      * @return commitQueue
      * @param committer The PoolCommitter contract.
      * @param periods The number of commits to get.
+     * @dev a committment period is defined by the update interval. That is one period is one update interval.
      */
     function getCommitQueue(IPoolCommitter2 committer, uint256 periods)
         public
@@ -136,6 +138,7 @@ contract PoolStateHelper is IPoolStateHelper {
 
         unchecked {
             for (uint256 i; i < periods; i++) {
+                // fetch the aggregate commitments for this period
                 commitQueue[i] = committer.totalPoolCommitments(
                     currentUpdateIntervalId + i
                 );
@@ -166,6 +169,9 @@ contract PoolStateHelper is IPoolStateHelper {
             }
 
             for (uint256 i = _i; i < _periodCount; i++) {
+                // index in either from 0 or from an offset of numPeriods - periodCount - 1
+                // Note: Should the index of smaInfo.prices not just start from 0? does this not just want to return an array
+                // of size _numPeriods - 1 OR _periodCount?
                 smaInfo.prices[
                     _periodCount < _numPeriods
                         ? i
@@ -264,6 +270,7 @@ contract PoolStateHelper is IPoolStateHelper {
             poolStateSnapshot.spotPrice
         );
 
+        // Execute given update interval commitments
         PoolInfo memory newPoolInfo = executeGivenCommit(
             poolStateSnapshot.commitQueue[poolStateSnapshot.pointer],
             calculateValueTransfer(
@@ -292,6 +299,7 @@ contract PoolStateHelper is IPoolStateHelper {
             // Base case
             finalExpectedPoolState = ExpectedPoolState({
                 cumulativePendingMintSettlement: newPendingSettlement,
+                // note: why do we multiply out by decimals here? Is that not already factored into the settlement balance?
                 skew: (newPoolInfo.long.settlementBalance *
                     10**poolStateSnapshot.settlementTokenDecimals) /
                     newPoolInfo.short.settlementBalance,

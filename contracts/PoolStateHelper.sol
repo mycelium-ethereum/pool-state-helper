@@ -215,14 +215,34 @@ contract PoolStateHelper is IPoolStateHelper {
         return (pool.frontRunningInterval() / pool.updateInterval()) + 1;
     }
 
+    function currentPoolState(ILeveragedPool2 pool)
+        private
+        view
+        returns (ExpectedPoolState memory)
+    {
+        address[2] memory tokens = pool.poolTokens();
+
+        return
+            ExpectedPoolState({
+                cumulativePendingMintSettlement: 0, // There are no pending settlements, since we're getting the most recent state
+                longSupply: IERC20(tokens[LONG_INDEX]).totalSupply(),
+                longBalance: pool.longBalance(),
+                shortSupply: IERC20(tokens[SHORT_INDEX]).totalSupply(),
+                shortBalance: pool.shortBalance()
+            });
+    }
+
     function getExpectedState(ILeveragedPool2 pool, uint256 periods)
         external
         view
         override
         returns (ExpectedPoolState memory finalExpectedPoolState)
     {
-        if (periods == 0 || periods > fullCommitPeriod(pool))
-            revert INVALID_PERIOD();
+        if (periods > fullCommitPeriod(pool)) revert INVALID_PERIOD();
+
+        if (periods == 0) {
+            return currentPoolState(pool);
+        }
 
         ISMAOracle smaOracle = ISMAOracle(pool.oracleWrapper());
         IPoolKeeper2 keeper = IPoolKeeper2(pool.keeper());

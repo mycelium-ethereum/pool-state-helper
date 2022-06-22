@@ -69,13 +69,10 @@ interface IPoolStateHelper {
     struct ExpectedPoolState {
         //in settlementToken decimals
         uint256 cumulativePendingMintSettlement;
-        uint256 skew;
         uint256 longSupply;
         uint256 longBalance;
-        uint256 longPrice;
         uint256 shortSupply;
         uint256 shortBalance;
-        uint256 shortPrice;
     }
 
     struct PoolStateSnapshot {
@@ -292,19 +289,10 @@ contract PoolStateHelper is IPoolStateHelper {
             // Base case
             finalExpectedPoolState = ExpectedPoolState({
                 cumulativePendingMintSettlement: newPendingSettlement,
-                skew: (newPoolInfo.long.settlementBalance *
-                    10**poolStateSnapshot.settlementTokenDecimals) /
-                    newPoolInfo.short.settlementBalance,
                 longBalance: newPoolInfo.long.settlementBalance,
                 longSupply: newPoolInfo.long.supply,
-                longPrice: (newPoolInfo.long.settlementBalance *
-                    10**poolStateSnapshot.settlementTokenDecimals) /
-                    newPoolInfo.long.supply,
                 shortBalance: newPoolInfo.short.settlementBalance,
-                shortSupply: newPoolInfo.short.supply,
-                shortPrice: (newPoolInfo.short.settlementBalance *
-                    10**poolStateSnapshot.settlementTokenDecimals) /
-                    newPoolInfo.short.supply
+                shortSupply: newPoolInfo.short.supply
             });
         } else {
             PoolStateSnapshot memory newPoolStateSnapshot = poolStateSnapshot;

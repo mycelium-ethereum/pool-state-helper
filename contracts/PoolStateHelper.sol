@@ -232,6 +232,14 @@ contract PoolStateHelper is IPoolStateHelper {
             });
     }
 
+    function isSMAOracle(address oracle) public view returns (bool result) {
+        try ISMAOracle(oracle).numPeriods() returns (int256) {
+            result = true;
+        } catch (bytes memory) {
+            result = false;
+        }
+    }
+
     function getExpectedState(ILeveragedPool2 pool, uint256 periods)
         external
         view
@@ -244,7 +252,21 @@ contract PoolStateHelper is IPoolStateHelper {
             return currentPoolState(pool);
         }
 
-        ISMAOracle smaOracle = ISMAOracle(pool.oracleWrapper());
+        address priceOracle = pool.oracleWrapper();
+
+        int256 _spotPrice;
+        SMAInfo memory _smaInfo;
+
+        if (isSMAOracle(priceOracle)) {
+            // SMA -> spot -> chainlink
+            _spotPrice = IOracleWrapper(IOracleWrapper(priceOracle).oracle())
+                .getPrice();
+            _smaInfo = getSMAPrices(ISMAOracle(priceOracle));
+        } else {
+            // spot -> chainlink
+            _spotPrice = IOracleWrapper(priceOracle).getPrice();
+        }
+
         IPoolKeeper2 keeper = IPoolKeeper2(pool.keeper());
         IPoolCommitter2 committer = IPoolCommitter2(pool.poolCommitter());
         uint256 settlementTokenDecimals = IERC20WithDecimals(
@@ -255,8 +277,8 @@ contract PoolStateHelper is IPoolStateHelper {
             pointer: 0,
             commitQueue: getCommitQueue(committer, periods),
             lastExecutedPrice: keeper.executionPrice(address(pool)),
-            spotPrice: IOracleWrapper(smaOracle.oracle()).getPrice(),
-            smaInfo: getSMAPrices(smaOracle),
+            spotPrice: _spotPrice,
+            smaInfo: _smaInfo,
             poolInfo: getPoolInfo(pool, committer),
             leverageAmount: pool.leverageAmount(),
             poolManagementFee: pool.fee(),
@@ -276,10 +298,20 @@ contract PoolStateHelper is IPoolStateHelper {
         returns (ExpectedPoolState memory finalExpectedPoolState)
     {
         // Calculate new price
-        (int256 newPrice, SMAInfo memory updatedSmaInfo) = getNewPrice(
-            poolStateSnapshot.smaInfo,
-            poolStateSnapshot.spotPrice
-        );
+
+        int256 newPrice;
+        SMAInfo memory updatedSmaInfo;
+
+        // Assumption: If it's an SMAOracle, numPeriods is at least 1.
+        if (poolStateSnapshot.smaInfo.numPeriods == 0) {
+            newPrice = poolStateSnapshot.spotPrice;
+            updatedSmaInfo = poolStateSnapshot.smaInfo;
+        } else {
+            (newPrice, updatedSmaInfo) = getNewPrice(
+                poolStateSnapshot.smaInfo,
+                poolStateSnapshot.spotPrice
+            );
+        }
 
         PoolInfo memory newPoolInfo = executeGivenCommit(
             poolStateSnapshot.commitQueue[poolStateSnapshot.pointer],

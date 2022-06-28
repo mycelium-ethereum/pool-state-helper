@@ -73,6 +73,7 @@ interface IPoolStateHelper {
         uint256 longBalance;
         uint256 shortSupply;
         uint256 shortBalance;
+        int256 oraclePrice;
     }
 
     struct PoolStateSnapshot {
@@ -221,6 +222,7 @@ contract PoolStateHelper is IPoolStateHelper {
         returns (ExpectedPoolState memory)
     {
         address[2] memory tokens = pool.poolTokens();
+        address oracleWrapper = pool.oracleWrapper();
 
         return
             ExpectedPoolState({
@@ -228,7 +230,8 @@ contract PoolStateHelper is IPoolStateHelper {
                 longSupply: IERC20(tokens[LONG_INDEX]).totalSupply(),
                 longBalance: pool.longBalance(),
                 shortSupply: IERC20(tokens[SHORT_INDEX]).totalSupply(),
-                shortBalance: pool.shortBalance()
+                shortBalance: pool.shortBalance(),
+                oraclePrice: IOracleWrapper(oracleWrapper).getPrice()
             });
     }
 
@@ -344,7 +347,8 @@ contract PoolStateHelper is IPoolStateHelper {
                 longBalance: newPoolInfo.long.settlementBalance,
                 longSupply: newPoolInfo.long.supply,
                 shortBalance: newPoolInfo.short.settlementBalance,
-                shortSupply: newPoolInfo.short.supply
+                shortSupply: newPoolInfo.short.supply,
+                oraclePrice: newPrice
             });
         } else {
             PoolStateSnapshot memory newPoolStateSnapshot = poolStateSnapshot;

@@ -1,5 +1,7 @@
 # Pool State Helper
 
+## ⚠️ WIP ⚠️ USE AT YOUR OWN RISK ⚠️
+
 Helpers to get pool state.
 
 ### Assumptions & Constraints:
@@ -27,14 +29,11 @@ Returns the `ExpectedPoolState` after the TotalCommitments for `periods` are app
 
 ```
     struct ExpectedPoolState {
-        //in settlementToken decimals
         uint256 cumulativePendingMintSettlement;
-        uint256 skew;
         uint256 longSupply;
         uint256 longBalance;
-        uint256 longPrice;
         uint256 shortSupply;
         uint256 shortBalance;
-        uint256 shortPrice;
+        uint256 oraclePrice;
     }
 ```

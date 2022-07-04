@@ -1,5 +1,5 @@
 // @ts-ignore
-import { ethers, network } from "hardhat";
+import { ethers, network, upgrades } from "hardhat";
 
 const networkToPoolSwapLibraryAddresses: Record<number, string> = {
   42161: "0x71dBdA135d5A9F64306fd22e00E59a5fEdFB86F9", // abitrum one
@@ -7,7 +7,7 @@ const networkToPoolSwapLibraryAddresses: Record<number, string> = {
 };
 
 async function main() {
-  console.log("IN DEPLOY SCRIPT", network.config.chainId);
+  console.log("IN UPGRADE SCRIPT", network.config.chainId);
 
   const chainId = network.config.chainId;
 
@@ -21,14 +21,25 @@ async function main() {
     throw new Error(`No known pool swap library for chainId ${chainId}`);
   }
 
-  const f = await ethers.getContractFactory(`PoolStateHelper`, {
-    libraries: {
-      PoolSwapLibrary: poolSwapLibraryAddress,
-    },
-  });
+  // @ts-ignore: Upgraded contract placeholder
+  const PoolStateHelper2 = await ethers.getContractFactory(
+    `<UPGRADED_CONTRACT>`,
+    {
+      libraries: {
+        PoolSwapLibrary: poolSwapLibraryAddress,
+      },
+    }
+  );
 
-  // If we had constructor arguments, they would be passed into deploy()
-  const contract = await f.deploy();
+  // @ts-ignore: Upgraded contract placeholder
+  const contract = await upgrades.upgradeProxy(
+    `<PROXY_INSTANCE_ADDRESS>`,
+    PoolStateHelper2,
+    {
+      kind: "uups",
+      unsafeAllowLinkedLibraries: true,
+    }
+  );
 
   // The address the Contract WILL have once mined
   console.log(`Deployed to:`, contract.address);

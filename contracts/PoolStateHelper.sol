@@ -7,6 +7,9 @@ import "./interfaces/IPoolCommitter.sol";
 import "./interfaces/IPoolKeeper.sol";
 import "./interfaces/IOracleWrapper.sol";
 import "./libraries/PoolSwapLibrary.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 /// @dev Extended interfaces
 interface IERC20WithDecimals is IERC20 {
@@ -112,10 +115,26 @@ interface IPoolStateHelper {
         returns (uint256);
 }
 
-contract PoolStateHelper is IPoolStateHelper {
+contract PoolStateHelper is
+    Initializable,
+    OwnableUpgradeable,
+    UUPSUpgradeable,
+    IPoolStateHelper
+{
     // From LeveragedPool.sol
     uint128 public constant LONG_INDEX = 0;
     uint128 public constant SHORT_INDEX = 1;
+
+    function initialize() public initializer {
+        __Ownable_init();
+        __UUPSUpgradeable_init();
+    }
+
+    function _authorizeUpgrade(address newImplementation)
+        internal
+        override
+        onlyOwner
+    {}
 
     /**
      * @notice Get an array of TotalCommitment in ascending order for a given period.

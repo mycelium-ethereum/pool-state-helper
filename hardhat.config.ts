@@ -40,10 +40,12 @@ const config: HardhatUserConfig = {
     arbRinkeby: {
       url: process.env.TESTNET_RPC ?? "",
       accounts: [process.env.TESTNET_PK ?? ""],
+      chainId: 421611,
     },
     arb: {
       url: process.env.MAINNET_RPC ?? "",
       accounts: [process.env.MAINNET_PK ?? ""],
+      chainId: 42161,
     },
   },
   gasReporter: {

@@ -7,7 +7,6 @@ Helpers to get pool state.
 ### Assumptions & Constraints:
 
 - An upkeep **will** happen every `UpdateInterval`
-- May not work if `FrontRunningInterval` is not completely divisible by `UpdateInterval`
 - Does not simulate keeper fees that get paid out of the pool
 - Does not simulate dynamic minting fees
 

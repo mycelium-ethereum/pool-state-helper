@@ -222,7 +222,6 @@ contract PoolStateHelper is
 
     /**
      * @notice The number of TotalCommitments that will be executed at the end of the frontrunning interval.
-     * Rounded up if not fully divisible.
      * @return fullCommitPeriod
      * @param pool The LeveragedPool contract.
      */
@@ -232,7 +231,19 @@ contract PoolStateHelper is
         override
         returns (uint256)
     {
-        return (pool.frontRunningInterval() / pool.updateInterval()) + 1;
+        uint256 currentUpdateIntervalId = IPoolCommitter2(pool.poolCommitter())
+            .updateIntervalId();
+
+        uint256 newUpdateIntervalId = PoolSwapLibrary
+            .appropriateUpdateIntervalId(
+                block.timestamp,
+                pool.lastPriceTimestamp(),
+                pool.frontRunningInterval(),
+                pool.updateInterval(),
+                currentUpdateIntervalId
+            );
+
+        return newUpdateIntervalId - currentUpdateIntervalId + 1;
     }
 
     function currentPoolState(ILeveragedPool2 pool)

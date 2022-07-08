@@ -72,6 +72,8 @@ interface IPoolStateHelper {
     struct ExpectedPoolState {
         //in settlementToken decimals
         uint256 cumulativePendingMintSettlement;
+        uint256 remainingPendingShortBurnTokens;
+        uint256 remainingPendingLongBurnTokens;
         uint256 longSupply;
         uint256 longBalance;
         uint256 shortSupply;
@@ -254,9 +256,15 @@ contract PoolStateHelper is
         address[2] memory tokens = pool.poolTokens();
         address oracleWrapper = pool.oracleWrapper();
 
+        IPoolCommitter2 committer = IPoolCommitter2(pool.poolCommitter());
+
         return
             ExpectedPoolState({
                 cumulativePendingMintSettlement: 0, // There are no pending settlements, since we're getting the most recent state
+                remainingPendingShortBurnTokens: committer
+                    .pendingShortBurnPoolTokens(),
+                remainingPendingLongBurnTokens: committer
+                    .pendingLongBurnPoolTokens(),
                 longSupply: IERC20(tokens[LONG_INDEX]).totalSupply(),
                 longBalance: pool.longBalance(),
                 shortSupply: IERC20(tokens[SHORT_INDEX]).totalSupply(),
@@ -374,6 +382,12 @@ contract PoolStateHelper is
             // Base case
             finalExpectedPoolState = ExpectedPoolState({
                 cumulativePendingMintSettlement: newPendingSettlement,
+                remainingPendingShortBurnTokens: newPoolInfo
+                    .short
+                    .pendingBurnPoolTokens,
+                remainingPendingLongBurnTokens: newPoolInfo
+                    .long
+                    .pendingBurnPoolTokens,
                 longBalance: newPoolInfo.long.settlementBalance,
                 longSupply: newPoolInfo.long.supply,
                 shortBalance: newPoolInfo.short.settlementBalance,

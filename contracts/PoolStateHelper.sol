@@ -324,7 +324,7 @@ contract PoolStateHelper is
         finalExpectedPoolState = simExpectedPoolState(poolStateSnapshot);
     }
 
-    /// @dev Exclusive of keeper fee, and dynamic minting fees, may be iffy if frontRunningInterval is not completely divisible by updateInterval
+    /// @dev Exclusive of keeper fee, and dynamic minting fees
     function simExpectedPoolState(PoolStateSnapshot memory poolStateSnapshot)
         private
         view
@@ -507,15 +507,15 @@ contract PoolStateHelper is
     }
 
     function executeCommitsForSide(
-        IPoolCommitter2.TotalCommitment memory totalCommitment,
+        uint256 sideMintSettlement,
         SideInfo memory side,
-        uint256 shortBurnInstantMintSettlement,
+        uint256 sideBurnInstantMintSettlement,
         uint256 totalBurnPoolTokens
     ) public pure returns (uint256 mintedPoolTokens, uint256 burnedPooltokens) {
         // Mints
         mintedPoolTokens = PoolSwapLibrary.getMintAmount(
             side.supply, // long token total supply,
-            totalCommitment.longMintSettlement + shortBurnInstantMintSettlement, // Add the settlement tokens that will be generated from burning shorts for instant long mint
+            sideMintSettlement + sideBurnInstantMintSettlement, // Add the settlement tokens that will be generated from burning side for instant otherSide mint
             side.settlementBalance, // total quote tokens in the long pool
             side.pendingBurnPoolTokens // total pool tokens commited to be burned
         );
@@ -574,7 +574,7 @@ contract PoolStateHelper is
                 uint256 longMintPoolTokens,
                 uint256 longBurnPoolTokens
             ) = executeCommitsForSide(
-                    totalCommitment,
+                    totalCommitment.longMintSettlement,
                     poolInfo.long,
                     shortBurnInstantMintSettlement,
                     totalLongBurnPoolTokens
@@ -595,7 +595,7 @@ contract PoolStateHelper is
                 uint256 shortMintPoolTokens,
                 uint256 shortBurnPoolTokens
             ) = executeCommitsForSide(
-                    totalCommitment,
+                    totalCommitment.shortMintSettlement,
                     poolInfo.short,
                     longBurnInstantMintSettlement,
                     totalShortBurnPoolTokens

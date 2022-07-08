@@ -29,6 +29,8 @@ Returns the `ExpectedPoolState` after the TotalCommitments for `periods` are app
 ```
     struct ExpectedPoolState {
         uint256 cumulativePendingMintSettlement;
+        uint256 remainingPendingShortBurnTokens;
+        uint256 remainingPendingLongBurnTokens;
         uint256 longSupply;
         uint256 longBalance;
         uint256 shortSupply;

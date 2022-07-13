@@ -81,19 +81,19 @@ interface IPoolStateHelper {
         int256 oraclePrice;
     }
 
-    struct PoolStateSnapshot {
-        uint256 pointer;
-        IPoolCommitter2.TotalCommitment[] commitQueue;
-        int256 lastExecutedPrice;
-        int256 spotPrice;
-        SMAInfo smaInfo;
-        PoolInfo poolInfo;
-        bytes16 leverageAmount;
-        bytes16 poolManagementFee;
+    struct ReadOnlyPoolProps {
         bytes16 burningFee;
         bytes16 mintingFee;
-        uint256 pendingMintSettlement;
-        uint256 settlementTokenDecimals;
+        bytes16 poolManagementFee;
+        bytes16 leverageAmount;
+    }
+
+    struct PriceInfo {
+        int256 indexPrice;
+        int256 spotPrice;
+        int256 lastExecutedPrice;
+        bool isSMAOracle;
+        SMAInfo smaInfo;
     }
 
     function getCommitQueue(IPoolCommitter2 committer, uint256 periods)
@@ -281,11 +281,12 @@ contract PoolStateHelper is
         }
     }
 
+    /// @dev Exclusive of keeper fee, and dynamic minting fees
     function getExpectedState(ILeveragedPool2 pool, uint256 periods)
         external
         view
         override
-        returns (ExpectedPoolState memory finalExpectedPoolState)
+        returns (ExpectedPoolState memory)
     {
         if (periods > fullCommitPeriod(pool)) revert INVALID_PERIOD();
 
@@ -293,119 +294,109 @@ contract PoolStateHelper is
             return currentPoolState(pool);
         }
 
-        address priceOracle = pool.oracleWrapper();
+        // PoolCommitter dependencies
+        IPoolCommitter2.TotalCommitment[] memory commitQueue;
+        PoolInfo memory poolInfo;
+        ReadOnlyPoolProps memory readonlyPoolProps;
 
-        int256 _spotPrice;
-        SMAInfo memory _smaInfo;
+        {
+            IPoolCommitter2 committer = IPoolCommitter2(pool.poolCommitter());
 
-        if (isSMAOracle(priceOracle)) {
-            // SMA -> spot -> chainlink
-            _spotPrice = IOracleWrapper(IOracleWrapper(priceOracle).oracle())
-                .getPrice();
-            _smaInfo = getSMAPrices(ISMAOracle(priceOracle));
-        } else {
-            // spot -> chainlink
-            _spotPrice = IOracleWrapper(priceOracle).getPrice();
+            commitQueue = getCommitQueue(committer, periods);
+            poolInfo = getPoolInfo(pool, committer);
+
+            //only assigned once
+            readonlyPoolProps = ReadOnlyPoolProps({
+                burningFee: committer.burningFee(),
+                mintingFee: committer.mintingFee(),
+                leverageAmount: pool.leverageAmount(),
+                poolManagementFee: pool.fee()
+            });
         }
 
-        IPoolKeeper2 keeper = IPoolKeeper2(pool.keeper());
-        IPoolCommitter2 committer = IPoolCommitter2(pool.poolCommitter());
-        uint256 settlementTokenDecimals = IERC20WithDecimals(
-            pool.settlementToken()
-        ).decimals();
+        // Oracle dependencies
+        PriceInfo memory priceInfo;
+        priceInfo.lastExecutedPrice = IPoolKeeper2(pool.keeper())
+            .executionPrice(address(pool));
 
-        PoolStateSnapshot memory poolStateSnapshot = PoolStateSnapshot({
-            pointer: 0,
-            commitQueue: getCommitQueue(committer, periods),
-            lastExecutedPrice: keeper.executionPrice(address(pool)),
-            spotPrice: _spotPrice,
-            smaInfo: _smaInfo,
-            poolInfo: getPoolInfo(pool, committer),
-            leverageAmount: pool.leverageAmount(),
-            poolManagementFee: pool.fee(),
-            burningFee: committer.burningFee(),
-            mintingFee: committer.mintingFee(),
-            pendingMintSettlement: 0, // Cumulative pendingMintSettlementAmount. Should match PoolCommitter.pendingMintSettlementAmount() as a sanity check at the end of a full commitQueue.
-            settlementTokenDecimals: settlementTokenDecimals
-        });
+        {
+            address priceOracle = pool.oracleWrapper();
 
-        finalExpectedPoolState = simExpectedPoolState(poolStateSnapshot);
-    }
+            if (isSMAOracle(priceOracle)) {
+                // SMA -> spot -> chainlink
+                priceInfo.isSMAOracle = true;
+                priceInfo.indexPrice = IOracleWrapper(priceOracle).getPrice();
+                priceInfo.spotPrice = IOracleWrapper(
+                    IOracleWrapper(priceOracle).oracle()
+                ).getPrice();
+                priceInfo.smaInfo = getSMAPrices(ISMAOracle(priceOracle));
+            } else {
+                // spot -> chainlink
+                priceInfo.spotPrice = IOracleWrapper(priceOracle).getPrice();
+                priceInfo.indexPrice = priceInfo.spotPrice;
+            }
+        }
 
-    /// @dev Exclusive of keeper fee, and dynamic minting fees
-    function simExpectedPoolState(PoolStateSnapshot memory poolStateSnapshot)
-        private
-        view
-        returns (ExpectedPoolState memory finalExpectedPoolState)
-    {
-        // Calculate new price
+        uint256 cumulativePendingMintSettlement;
 
-        int256 newPrice;
-        SMAInfo memory updatedSmaInfo;
+        for (uint256 i; i < periods; i++) {
+            // Price update
+            if (priceInfo.isSMAOracle) {
+                (int256 newPrice, SMAInfo memory updatedSmaInfo) = getNewPrice(
+                    priceInfo.smaInfo,
+                    priceInfo.spotPrice
+                );
 
-        // Assumption: If it's an SMAOracle, numPeriods is at least 1.
-        if (poolStateSnapshot.smaInfo.numPeriods == 0) {
-            newPrice = poolStateSnapshot.spotPrice;
-            updatedSmaInfo = poolStateSnapshot.smaInfo;
-        } else {
-            (newPrice, updatedSmaInfo) = getNewPrice(
-                poolStateSnapshot.smaInfo,
-                poolStateSnapshot.spotPrice
+                // Update price info
+                priceInfo.indexPrice = newPrice;
+                priceInfo.smaInfo = updatedSmaInfo;
+            } else {
+                /** NO OP because the assumption is a constant spot price
+                 * E.g.
+                 * priceInfo.indexPrice = priceInfo.indexPrice;
+                 * priceInfo.smaInfo = priceInfo.smaInfo;
+                 */
+            }
+
+            // Execute TotalCommitments in that period
+            poolInfo = executeGivenCommit(
+                commitQueue[i],
+                calculateValueTransfer(
+                    priceInfo.lastExecutedPrice,
+                    priceInfo.indexPrice,
+                    poolInfo,
+                    readonlyPoolProps.leverageAmount,
+                    readonlyPoolProps.poolManagementFee
+                ),
+                readonlyPoolProps.burningFee,
+                readonlyPoolProps.mintingFee
             );
+
+            // Update lastExecutedPrice
+            priceInfo.lastExecutedPrice = priceInfo.indexPrice;
+
+            // Update pendingSettlement
+            cumulativePendingMintSettlement =
+                cumulativePendingMintSettlement +
+                commitQueue[i].longMintSettlement +
+                commitQueue[i].shortMintSettlement;
         }
 
-        PoolInfo memory newPoolInfo = executeGivenCommit(
-            poolStateSnapshot.commitQueue[poolStateSnapshot.pointer],
-            calculateValueTransfer(
-                poolStateSnapshot.lastExecutedPrice,
-                newPrice,
-                poolStateSnapshot.poolInfo,
-                poolStateSnapshot.leverageAmount,
-                poolStateSnapshot.poolManagementFee
-            ),
-            poolStateSnapshot.burningFee,
-            poolStateSnapshot.mintingFee
-        );
-
-        uint256 newPendingSettlement = poolStateSnapshot.pendingMintSettlement +
-            poolStateSnapshot
-                .commitQueue[poolStateSnapshot.pointer]
-                .longMintSettlement +
-            poolStateSnapshot
-                .commitQueue[poolStateSnapshot.pointer]
-                .shortMintSettlement;
-
-        if (
-            poolStateSnapshot.pointer + 1 ==
-            poolStateSnapshot.commitQueue.length
-        ) {
-            // Base case
-            finalExpectedPoolState = ExpectedPoolState({
-                cumulativePendingMintSettlement: newPendingSettlement,
-                remainingPendingShortBurnTokens: newPoolInfo
+        return
+            ExpectedPoolState({
+                cumulativePendingMintSettlement: cumulativePendingMintSettlement,
+                remainingPendingShortBurnTokens: poolInfo
                     .short
                     .pendingBurnPoolTokens,
-                remainingPendingLongBurnTokens: newPoolInfo
+                remainingPendingLongBurnTokens: poolInfo
                     .long
                     .pendingBurnPoolTokens,
-                longBalance: newPoolInfo.long.settlementBalance,
-                longSupply: newPoolInfo.long.supply,
-                shortBalance: newPoolInfo.short.settlementBalance,
-                shortSupply: newPoolInfo.short.supply,
-                oraclePrice: newPrice
+                longBalance: poolInfo.long.settlementBalance,
+                longSupply: poolInfo.long.supply,
+                shortBalance: poolInfo.short.settlementBalance,
+                shortSupply: poolInfo.short.supply,
+                oraclePrice: priceInfo.indexPrice
             });
-        } else {
-            PoolStateSnapshot memory newPoolStateSnapshot = poolStateSnapshot;
-
-            newPoolStateSnapshot.pointer = poolStateSnapshot.pointer + 1;
-            newPoolStateSnapshot.poolInfo = newPoolInfo;
-            newPoolStateSnapshot.lastExecutedPrice = newPrice;
-
-            newPoolStateSnapshot.pendingMintSettlement = newPendingSettlement;
-            newPoolStateSnapshot.smaInfo = updatedSmaInfo;
-
-            finalExpectedPoolState = simExpectedPoolState(newPoolStateSnapshot);
-        }
     }
 
     /** PURE FUNCTIONS */
